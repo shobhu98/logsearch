@@ -1,0 +1,50 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+convert
+convert.exe
+
+
+# Go workspace
+go.work
+go.work.sum
+
+# Test & coverage
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# Config with secrets
+config.local.yaml
+*.env
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+data/
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temp / cache
+tmp/
+temp/
+.cache/
+
+
+build.ps1
+

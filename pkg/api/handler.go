@@ -1,0 +1,273 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"backend/pkg/convert"
+	"backend/pkg/index"
+	"backend/pkg/models"
+	"backend/pkg/parser"
+)
+
+// Handler holds all dependencies for the API
+type Handler struct {
+	mu         sync.RWMutex
+	rebuildMu  sync.Mutex // serialises concurrent rebuild/upload requests
+	idx        *index.Index
+	dataDir    string
+	ready      bool
+	numWorkers int
+	ctx        context.Context
+}
+
+// New creates a new Handler and builds the index from dataDir
+func New(ctx context.Context, dataDir string, numWorkers int) (*Handler, error) {
+	h := &Handler{ctx: ctx, dataDir: dataDir, numWorkers: numWorkers}
+	if err := h.buildIndex(); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+// buildIndex loads records and rebuilds the index — used at startup and on reload
+func (h *Handler) buildIndex() error {
+	start := time.Now()
+	log.Println("[index] Loading records from", h.dataDir)
+
+	records, err := parser.LoadFromJSON(h.dataDir)
+	if err != nil {
+		return fmt.Errorf("failed to load records: %w", err)
+	}
+	log.Printf("[index] Loaded %d records in %v", len(records), time.Since(start))
+
+	buildStart := time.Now()
+	idx := index.New()
+	if err := idx.Build(h.ctx, records, h.numWorkers); err != nil {
+		return fmt.Errorf("index build cancelled: %w", err)
+	}
+	log.Printf("[index] Built inverted index in %v", time.Since(buildStart))
+
+	stats := idx.Stats()
+	log.Printf("[index] Stats: %d docs, %d unique terms", stats["total_docs"], stats["total_terms"])
+
+	h.mu.Lock()
+	h.idx = idx
+	h.ready = true
+	h.mu.Unlock()
+
+	return nil
+}
+
+// RegisterRoutes sets up all HTTP routes
+func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/health", h.handleHealth)
+	mux.HandleFunc("/api/search", h.handleSearch)
+	mux.HandleFunc("/api/stats", h.handleStats)
+	mux.HandleFunc("/api/reload", h.handleReload)
+	mux.HandleFunc("/api/upload", h.handleUpload)
+}
+
+// handleHealth returns service status
+func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
+	setCORSHeaders(w)
+	h.mu.RLock()
+	ready := h.ready
+	h.mu.RUnlock()
+
+	status := "ok"
+	code := http.StatusOK
+	if !ready {
+		status = "loading"
+		code = http.StatusServiceUnavailable
+	}
+
+	writeJSON(w, code, map[string]string{"status": status})
+}
+
+// handleSearch is the main search endpoint
+// GET /api/search?q=<query>&limit=<n>&offset=<n>
+func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse("method not allowed"))
+		return
+	}
+
+	// CORS for React dev server
+	setCORSHeaders(w)
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		writeJSON(w, http.StatusBadRequest, errorResponse("query parameter 'q' is required"))
+		return
+	}
+
+	limit := 20
+	offset := 0
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	h.mu.RLock()
+	idx := h.idx
+	h.mu.RUnlock()
+
+	results, timeTakenMs := idx.Search(query)
+
+	// apply pagination
+	total := len(results)
+	if offset >= total {
+		results = []models.SearchResult{}
+	} else {
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		results = results[offset:end]
+	}
+
+	writeJSON(w, http.StatusOK, models.SearchResponse{
+		Query:       query,
+		Total:       total,
+		TimeTakenMs: timeTakenMs,
+		Results:     results,
+	})
+}
+
+// handleStats returns index statistics
+func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
+	setCORSHeaders(w)
+	h.mu.RLock()
+	idx := h.idx
+	h.mu.RUnlock()
+
+	writeJSON(w, http.StatusOK, idx.Stats())
+}
+
+// handleReload reloads the index from disk (stretch goal: dynamic loading)
+func (h *Handler) handleReload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse("method not allowed"))
+		return
+	}
+	setCORSHeaders(w)
+
+	log.Println("[reload] Triggered index reload")
+	go func() {
+		h.rebuildMu.Lock()
+		defer h.rebuildMu.Unlock()
+		if err := h.buildIndex(); err != nil {
+			log.Printf("[reload] Failed: %v", err)
+		} else {
+			log.Println("[reload] Index reloaded successfully")
+		}
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "reload started"})
+}
+
+// handleUpload accepts a Parquet file, saves it to dataDir, appends its
+// records to records.json, and rebuilds the index — all without restarting.
+// POST /api/upload  (multipart/form-data, field name "file")
+func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
+	setCORSHeaders(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse("method not allowed"))
+		return
+	}
+
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResponse("failed to parse form: "+err.Error()))
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResponse("field 'file' missing"))
+		return
+	}
+	defer file.Close()
+
+	// sanitise filename — no path traversal
+	safeName := filepath.Base(filepath.Clean(header.Filename))
+	if safeName == "." || safeName == "records.json" {
+		writeJSON(w, http.StatusBadRequest, errorResponse("invalid filename"))
+		return
+	}
+	destPath := filepath.Join(h.dataDir, safeName)
+
+	dest, err := os.Create(destPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorResponse("failed to save file"))
+		return
+	}
+	if _, err := io.Copy(dest, file); err != nil {
+		dest.Close()
+		writeJSON(w, http.StatusInternalServerError, errorResponse("failed to write file"))
+		return
+	}
+	dest.Close()
+
+	log.Printf("[upload] Saved %s (%d bytes)", safeName, header.Size)
+
+	go func() {
+		h.rebuildMu.Lock()
+		defer h.rebuildMu.Unlock()
+
+		if err := convert.AppendFile(h.dataDir, destPath); err != nil {
+			log.Printf("[upload] AppendFile failed: %v", err)
+			return
+		}
+		if err := h.buildIndex(); err != nil {
+			log.Printf("[upload] Index rebuild failed: %v", err)
+		} else {
+			log.Printf("[upload] Index rebuilt after adding %s", safeName)
+		}
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"status": "processing",
+		"file":   safeName,
+	})
+}
+
+// --- helpers ---
+
+func writeJSON(w http.ResponseWriter, code int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("failed to write response: %v", err)
+	}
+}
+
+func errorResponse(msg string) map[string]string {
+	return map[string]string{"error": msg}
+}
+
+func setCORSHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}

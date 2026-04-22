@@ -1,0 +1,12 @@
+# Force LF for files that must not have CRLF
+Dockerfile*       text eol=lf
+*.sh              text eol=lf
+Makefile          text eol=lf
+
+# Go source — auto-detect
+*.go              text
+
+# Binary
+*.exe             binary
+*.dll             binary
+*.so              binary
