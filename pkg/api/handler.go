@@ -62,9 +62,14 @@ func (h *Handler) buildIndex() error {
 	log.Printf("[index] Stats: %d docs, %d unique terms", stats["total_docs"], stats["total_terms"])
 
 	h.mu.Lock()
+	oldIdx := h.idx
 	h.idx = idx
 	h.ready = true
 	h.mu.Unlock()
+
+	if oldIdx != nil {
+		oldIdx.Stop()
+	}
 
 	return nil
 }

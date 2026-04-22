@@ -3,7 +3,7 @@ package models
 // SearchResult wraps a record with a relevance score
 type SearchResult struct {
 	Record *Record `json:"record"`
-	Score  int     `json:"score"` // how many fields matched
+	Score  float64 `json:"score"` // BM25 relevance score
 }
 
 // SearchResponse is what the API returns

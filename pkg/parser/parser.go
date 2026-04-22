@@ -20,7 +20,7 @@ func LoadFromJSON(dataDir string) ([]models.Record, error) {
 	}
 
 	// raw map slice so we can handle mixed types from parquet (int fields stored as strings)
-	var raw []map[string]interface{}
+	var raw []map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("failed to parse records.json: %w", err)
 	}
