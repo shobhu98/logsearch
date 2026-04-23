@@ -48,3 +48,27 @@ temp/
 
 build.ps1
 
+# ── Frontend (frontend/) ──────────────────────────────────────────────────────
+
+# Dependencies
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/build/dist/
+
+# Env files
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Vite cache
+frontend/.vite/
+
+# npm / yarn / pnpm debug logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*

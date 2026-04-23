@@ -90,27 +90,27 @@ flowchart TB
 
 ```
 apica/
-├── backend/
-│   ├── cmd/
-│   │   ├── main.go          # entry point — wires config, convert, API, server
-│   │   └── convert/main.go  # standalone convert CLI
-│   ├── pkg/
-│   │   ├── api/             # HTTP handler + routes
-│   │   ├── config/          # config.yaml loader
-│   │   ├── convert/         # Parquet → JSON conversion
-│   │   ├── index/           # BM25 in-memory index
-│   │   ├── models/          # shared types
-│   │   └── parser/          # JSON → []Record loader
-│   ├── data/                # Parquet input files + records.json
-│   ├── build/               # Dockerfiles
-│   ├── config.yaml
-│   └── Makefile
-├── apica-front/frontend/
-│   ├── src/                 # React source
-│   ├── build/Dockerfile
-│   ├── nginx.conf
-│   └── Makefile
-└── diagrams/                # Architecture diagrams (Excalidraw)
+└── backend/                 # git repository root
+    ├── cmd/
+    │   ├── main.go          # entry point — wires config, convert, API, server
+    │   └── convert/main.go  # standalone convert CLI
+    ├── pkg/
+    │   ├── api/             # HTTP handler + routes
+    │   ├── config/          # config.yaml loader
+    │   ├── convert/         # Parquet → JSON conversion
+    │   ├── index/           # BM25 in-memory index
+    │   ├── models/          # shared types
+    │   └── parser/          # JSON → []Record loader
+    ├── frontend/            # React frontend (Vite + nginx)
+    │   ├── src/             # React source
+    │   ├── build/Dockerfile
+    │   ├── nginx.conf
+    │   └── Makefile
+    ├── data/                # Parquet input files + records.json
+    ├── build/               # Backend Dockerfiles
+    ├── diagrams/            # Architecture diagrams (Excalidraw)
+    ├── config.yaml
+    └── Makefile
 ```
 
 ---
@@ -151,7 +151,7 @@ make clean      # removes ./main
 ### 4. Start the frontend dev server
 
 ```bash
-cd ../apica-front/frontend
+cd frontend
 make install    # npm ci  (first time only)
 make dev        # vite dev server on http://localhost:5173
 ```
@@ -196,10 +196,10 @@ make docker.stop
 
 ### Frontend
 
-All commands run from the `apica-front/frontend/` directory.
+All commands run from the `frontend/` directory (inside `backend/`).
 
 ```bash
-cd apica-front/frontend
+cd frontend
 ```
 
 **Build the image** (Node build → nginx serve):
@@ -242,7 +242,7 @@ make docker-clean
 
 ## Configuration
 
-Edit `backend/config.yaml` before running:
+Edit `config.yaml` before running:
 
 ```yaml
 port: "8080"
