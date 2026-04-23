@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	bm25K1         = 1.2             // term-frequency saturation
-	bm25B          = 0.75            // length normalisation
+	bm25K1         = 1.2  // term-frequency saturation
+	bm25B          = 0.75 // length normalisation
 	cacheTTL       = 30 * time.Second
 	maxPrefixTerms = 50
 )
@@ -45,6 +45,7 @@ type posting struct {
 
 // fieldWeight defines per-field BM25 multipliers.
 // Higher weight = matches in that field contribute more to the final score.
+// TO DO: these are currently hardcoded based on intuition — could be tuned based on relevance testing.
 var fieldWeight = map[string]float64{
 	"Message":        5,
 	"AppName":        4,
