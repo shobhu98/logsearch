@@ -4,6 +4,12 @@ A full-stack log search engine. The Go backend ingests Parquet files, builds an 
 
 ---
 
+## Preview
+
+![Log Search UI](assets/preview.png)
+
+---
+
 ## Table of Contents
 
 - [High-Level Flow](#high-level-flow)
@@ -106,8 +112,7 @@ flowchart TB
 ## Project Structure
 
 ```
-apica/
-└── backend/                 # git repository root
+ backend/                 # git repository root
     ├── cmd/
     │   ├── main.go          # entry point — wires config, convert, API, server
     │   └── convert/main.go  # standalone convert CLI
