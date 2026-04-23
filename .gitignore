@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-convert
-convert.exe
+/convert
+/convert.exe
 
 
 # Go workspace
