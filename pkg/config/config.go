@@ -7,21 +7,45 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type ConvertConfig struct {
+	DataDir string `yaml:"data_dir"`
+	OutFile string `yaml:"out_file"`
+	Pattern string `yaml:"pattern"`
+}
+
+type SearchConfig struct {
+	DefaultLimit  int `yaml:"default_limit"`
+	MaxLimit      int `yaml:"max_limit"`
+	DefaultOffset int `yaml:"default_offset"`
+}
+
 // Config holds all configuration for the application
 type Config struct {
-	Port         string        `yaml:"port" default:"8080"`
-	DataDir      string        `yaml:"data_dir" default:"../data"`
-	ReadTimeout  time.Duration `yaml:"read_timeout" default:"10s"`
-	WriteTimeout time.Duration `yaml:"write_timeout" default:"30s"`
-	IdleTimeout  time.Duration `yaml:"idle_timeout" default:"60s"`
-	NumWorkers   int           `yaml:"num_workers" default:"8"`
+	Port         string        `yaml:"port"`
+	DataDir      string        `yaml:"data_dir"`
+	Convert      ConvertConfig `yaml:"convert"`
+	Search       SearchConfig  `yaml:"search"`
+	ReadTimeout  time.Duration `yaml:"read_timeout"`
+	WriteTimeout time.Duration `yaml:"write_timeout"`
+	IdleTimeout  time.Duration `yaml:"idle_timeout"`
+	NumWorkers   int           `yaml:"num_workers"`
 }
 
 // Load reads configuration from a YAML file
 func Load(configPath string) (*Config, error) {
 	cfg := &Config{
-		Port:         "8080",
-		DataDir:      "../data",
+		Port:    "8080",
+		DataDir: "../data",
+		Convert: ConvertConfig{
+			DataDir: "data",
+			OutFile: "data/records.json",
+			Pattern: "data/File *",
+		},
+		Search: SearchConfig{
+			DefaultLimit:  20,
+			MaxLimit:      100,
+			DefaultOffset: 0,
+		},
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

@@ -35,12 +35,12 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	log.Println("[main] Converting Parquet files to JSON...")
-	if err := convert.Run(); err != nil {
+	if err := convert.Run(cfg.Convert); err != nil {
 		log.Fatalf("[main] Failed to convert Parquet files: %v", err)
 	}
 
 	// build handler — loads + indexes all records at startup
-	handler, err := api.New(ctx, cfg.DataDir, cfg.NumWorkers)
+	handler, err := api.New(ctx, cfg.DataDir, cfg.NumWorkers, cfg.Search)
 	if err != nil {
 		log.Fatalf("[main] Failed to initialize: %v", err)
 	}

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"backend/pkg/config"
 	"backend/pkg/convert"
 	"backend/pkg/index"
 	"backend/pkg/models"
@@ -31,11 +32,12 @@ type Handler struct {
 	rebuilding bool // true while a background index rebuild is in progress
 	numWorkers int
 	ctx        context.Context
+	search     config.SearchConfig
 }
 
 // New creates a new Handler and builds the index from dataDir
-func New(ctx context.Context, dataDir string, numWorkers int) (*Handler, error) {
-	h := &Handler{ctx: ctx, dataDir: dataDir, numWorkers: numWorkers}
+func New(ctx context.Context, dataDir string, numWorkers int, searchCfg config.SearchConfig) (*Handler, error) {
+	h := &Handler{ctx: ctx, dataDir: dataDir, numWorkers: numWorkers, search: searchCfg}
 	if err := h.buildIndex(); err != nil {
 		return nil, err
 	}
@@ -157,11 +159,11 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 20
-	offset := 0
+	limit := h.search.DefaultLimit
+	offset := h.search.DefaultOffset
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
-			limit = v
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = min(v, h.search.MaxLimit)
 		}
 	}
 	if o := r.URL.Query().Get("offset"); o != "" {

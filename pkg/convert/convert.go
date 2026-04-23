@@ -9,26 +9,21 @@ import (
 	"sort"
 	"time"
 
+	"backend/pkg/config"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 )
 
-const (
-	DataDir = "data"
-	OutFile = "data/records.json"
-	Pattern = "data/File *"
-)
-
 type Record map[string]interface{}
 
-func Run() error {
-	files, err := filepath.Glob(Pattern)
+func Run(cfg config.ConvertConfig) error {
+	files, err := filepath.Glob(cfg.Pattern)
 	if err != nil {
 		return fmt.Errorf("failed to glob files: %w", err)
 	}
 
 	if len(files) == 0 {
-		return fmt.Errorf("no files matching %s — place Parquet files (File 1, File 2, …) in data/ and re-run", Pattern)
+		return fmt.Errorf("no files matching %s — place Parquet files (File 1, File 2, …) in data/ and re-run", cfg.Pattern)
 	}
 
 	sort.Strings(files)
@@ -46,7 +41,7 @@ func Run() error {
 		log.Printf("%s: %d rows (total: %d)", filepath.Base(path), len(fileRecords), len(records))
 	}
 
-	if err := os.MkdirAll(DataDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
@@ -55,13 +50,13 @@ func Run() error {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	if err := os.WriteFile(OutFile, jsonData, 0644); err != nil {
+	if err := os.WriteFile(cfg.OutFile, jsonData, 0644); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
 	elapsed := time.Since(start)
 	sizeMB := float64(len(jsonData)) / 1024 / 1024
-	log.Printf("done — %d records → %s (%.1f MB, %.2fs)", len(records), OutFile, sizeMB, elapsed.Seconds())
+	log.Printf("done — %d records → %s (%.1f MB, %.2fs)", len(records), cfg.OutFile, sizeMB, elapsed.Seconds())
 	return nil
 }
 
