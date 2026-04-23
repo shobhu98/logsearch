@@ -2,12 +2,14 @@ const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
 export async function search({ query, limit = 20, offset = 0 }) {
   const params = new URLSearchParams({ q: query, limit, offset })
+  const t0 = performance.now()
   const res = await fetch(`${BASE}/api/search?${params}`)
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || `HTTP ${res.status}`)
   }
-  return res.json()
+  const data = await res.json()
+  return { ...data, client_ms: performance.now() - t0 }
 }
 
 export async function fetchStats() {

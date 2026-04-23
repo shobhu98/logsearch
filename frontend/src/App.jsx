@@ -6,6 +6,31 @@ import { fetchStats, fetchHealth, triggerReload, uploadParquet } from './api'
 import { useSearch } from './useSearch'
 import styles from './App.module.css'
 
+const SEARCH_SUGGESTIONS = ['kafka', 'snapshot', 'producer', 'partition', 'consumer', 'leader', 'otel', 'fluent']
+
+const UPLOAD_DONE_TTL_MS = 2000  // how long to show "done" before resetting to idle
+const UPLOAD_ERR_TTL_MS  = 4000  // how long to show error before resetting to idle
+const POLL_INTERVAL_MS   = 500   // how often to check /health during a rebuild
+const POLL_MAX_ATTEMPTS  = 60    // give up after 30 s (60 × 500 ms)
+
+// Polls /health until rebuilding is false, then calls onDone(). Gives up after
+// POLL_MAX_ATTEMPTS and calls onDone() anyway so the UI never hangs forever.
+async function pollUntilReady(onDone) {
+  let attempts = 0
+  const tick = async () => {
+    attempts++
+    try {
+      const h = await fetchHealth()
+      if (h.rebuilding && attempts < POLL_MAX_ATTEMPTS) {
+        setTimeout(tick, POLL_INTERVAL_MS)
+        return
+      }
+    } catch {}
+    onDone()
+  }
+  setTimeout(tick, POLL_INTERVAL_MS)
+}
+
 // ── highlight matching terms in text ──────────────────────────────────────────
 function highlight(text, query) {
   if (!query || !text) return text
@@ -29,7 +54,7 @@ function SeverityBadge({ value }) {
   return <span className={`${styles.badge} ${cls}`}>{value || 'info'}</span>
 }
 
-// ── single result card ─────────────────────────────────────────────────────────
+// ── single result card ───────────────────────────────────────────────────-----------
 function ResultCard({ result, query, index }) {
   const [expanded, setExpanded] = useState(false)
   const r = result.record
@@ -73,7 +98,7 @@ function ResultCard({ result, query, index }) {
         <div className={styles.cardRight}>
           <div className={styles.scoreBar}>
             <span className={styles.scoreLabel}>score</span>
-            <span className={styles.scoreVal}>{result.score}</span>
+            <span className={styles.scoreVal}>{result.score.toFixed(2)}</span>
           </div>
           <span className={styles.timestamp}>{ts}</span>
         </div>
@@ -149,7 +174,7 @@ function Pagination({ page, totalPages, onPage }) {
 // ── main app ───────────────────────────────────────────────────────────────────
 export default function App() {
   const {
-    query, setQuery, results, total, timeTaken,
+    query, setQuery, results, total, timeTaken, roundTripMs,
     loading, error, page, totalPages, goToPage,
     searched, doSearch,
   } = useSearch()
@@ -165,7 +190,7 @@ export default function App() {
   useEffect(() => {
     Promise.all([fetchStats(), fetchHealth()])
       .then(([s, h]) => { setStats(s); setHealth(h) })
-      .catch(() => {})
+      .catch((err) => console.error('[init] failed to fetch stats/health:', err))
   }, [])
 
   const handleKey = useCallback((e) => {
@@ -176,12 +201,11 @@ export default function App() {
     setReloading(true)
     try {
       await triggerReload()
-      setTimeout(async () => {
-        const [s] = await Promise.all([fetchStats()])
-        setStats(s)
+      pollUntilReady(async () => {
+        try { setStats(await fetchStats()) } catch {}
         setReloading(false)
-      }, 3000)
-    } catch { setReloading(false) }
+      })
+    } catch (err) { console.error('[reload] failed:', err); setReloading(false) }
   }
 
   const handleUploadClick = () => fileInputRef.current?.click()
@@ -196,23 +220,17 @@ export default function App() {
     try {
       await uploadParquet(file)
       setUploadState('processing')
-      // poll stats after the backend finishes indexing (~3-5s)
-      setTimeout(async () => {
-        try {
-          const s = await fetchStats()
-          setStats(s)
-        } catch {}
+      pollUntilReady(async () => {
+        try { setStats(await fetchStats()) } catch (err) { console.error('[upload] failed to refresh stats:', err) }
         setUploadState('done')
-        setTimeout(() => setUploadState('idle'), 2000)
-      }, 4000)
+        setTimeout(() => setUploadState('idle'), UPLOAD_DONE_TTL_MS)
+      })
     } catch (err) {
       setUploadState('error')
       setUploadMsg(err.message)
-      setTimeout(() => setUploadState('idle'), 4000)
+      setTimeout(() => setUploadState('idle'), UPLOAD_ERR_TTL_MS)
     }
   }
-
-  const suggestions = ['kafka', 'snapshot', 'producer', 'partition', 'consumer', 'leader', 'otel', 'fluent']
 
   return (
     <div className={styles.root}>
@@ -309,7 +327,7 @@ export default function App() {
           {!searched && (
             <div className={styles.suggestions}>
               <span className={styles.suggestLabel}>Try:</span>
-              {suggestions.map(s => (
+              {SEARCH_SUGGESTIONS.map(s => (
                 <button key={s} className={styles.chip}
                   onClick={() => { setQuery(s); doSearch(s, 0) }}>
                   {s}
@@ -335,7 +353,8 @@ export default function App() {
                   <strong>{total.toLocaleString()}</strong> results for <em>"{query}"</em>
                   {timeTaken !== null && (
                     <span className={styles.timing}>
-                      <Clock size={11} /> {timeTaken.toFixed(2)}ms
+                      <Clock size={11} /> {timeTaken.toFixed(2)}ms search
+                      {roundTripMs != null && ` · ${roundTripMs.toFixed(0)}ms total`}
                     </span>
                   )}
                 </span>

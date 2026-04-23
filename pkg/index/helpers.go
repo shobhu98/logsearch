@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	bm25K1 = 1.2  // term-frequency saturation
-	bm25B  = 0.75 // length normalisation
+	bm25K1         = 1.2             // term-frequency saturation
+	bm25B          = 0.75            // length normalisation
+	cacheTTL       = 30 * time.Second
+	maxPrefixTerms = 50
 )
 
 // Index is the in-memory inverted index
@@ -35,11 +37,10 @@ var stopwords = map[string]struct{}{
 	"be": {}, "was": {}, "are": {}, "has": {},
 }
 
-// posting holds which document a term appeared in, which field, and how many times
 type posting struct {
 	docID    int
 	field    string
-	termFreq int // number of occurrences of this term in (docID, field)
+	termFreq int
 }
 
 // fieldWeight defines per-field BM25 multipliers.

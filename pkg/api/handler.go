@@ -28,6 +28,7 @@ type Handler struct {
 	idx        *index.Index
 	dataDir    string
 	ready      bool
+	rebuilding bool // true while a background index rebuild is in progress
 	numWorkers int
 	ctx        context.Context
 }
@@ -124,16 +125,19 @@ func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	setCORSHeaders(w)
 	h.mu.RLock()
 	ready := h.ready
+	rebuilding := h.rebuilding
 	h.mu.RUnlock()
 
 	status := "ok"
 	code := http.StatusOK
-	if !ready {
+	if rebuilding {
+		status = "rebuilding"
+	} else if !ready {
 		status = "loading"
 		code = http.StatusServiceUnavailable
 	}
 
-	writeJSON(w, code, map[string]string{"status": status})
+	writeJSON(w, code, map[string]any{"status": status, "rebuilding": rebuilding})
 }
 
 // handleSearch is the main search endpoint
@@ -177,7 +181,11 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if offset >= total {
 		results = []models.SearchResult{}
 	} else {
-		results = results[offset:min(offset+limit, total)]
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		results = results[offset:end]
 	}
 
 	writeJSON(w, http.StatusOK, models.SearchResponse{
@@ -198,7 +206,7 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, idx.Stats())
 }
 
-// handleReload reloads the index from disk (stretch goal: dynamic loading)
+// handleReload reloads the index from disk.
 func (h *Handler) handleReload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, errorResponse("method not allowed"))
@@ -207,6 +215,10 @@ func (h *Handler) handleReload(w http.ResponseWriter, r *http.Request) {
 	setCORSHeaders(w)
 
 	log.Println("[reload] Triggered index reload")
+	h.mu.Lock()
+	h.rebuilding = true
+	h.mu.Unlock()
+
 	go func() {
 		h.rebuildMu.Lock()
 		defer h.rebuildMu.Unlock()
@@ -215,6 +227,9 @@ func (h *Handler) handleReload(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Println("[reload] Index reloaded successfully")
 		}
+		h.mu.Lock()
+		h.rebuilding = false
+		h.mu.Unlock()
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "reload started"})
@@ -246,10 +261,14 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// sanitise filename — no path traversal
-	safeName := filepath.Base(filepath.Clean(header.Filename))
-	if safeName == "." || safeName == "records.json" {
+	// sanitise filename — no path traversal, null bytes, or non-parquet uploads
+	if strings.ContainsRune(header.Filename, 0) {
 		writeJSON(w, http.StatusBadRequest, errorResponse("invalid filename"))
+		return
+	}
+	safeName := filepath.Base(filepath.Clean(header.Filename))
+	if safeName == "." || !strings.HasSuffix(strings.ToLower(safeName), ".parquet") {
+		writeJSON(w, http.StatusBadRequest, errorResponse("only .parquet files are accepted"))
 		return
 	}
 	destPath := filepath.Join(h.dataDir, safeName)
@@ -268,19 +287,24 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[upload] Saved %s (%d bytes)", safeName, header.Size)
 
+	h.mu.Lock()
+	h.rebuilding = true
+	h.mu.Unlock()
+
 	go func() {
 		h.rebuildMu.Lock()
 		defer h.rebuildMu.Unlock()
 
 		if err := convert.AppendFile(h.dataDir, destPath); err != nil {
 			log.Printf("[upload] AppendFile failed: %v", err)
-			return
-		}
-		if err := h.buildIndex(); err != nil {
+		} else if err := h.buildIndex(); err != nil {
 			log.Printf("[upload] Index rebuild failed: %v", err)
 		} else {
 			log.Printf("[upload] Index rebuilt after adding %s", safeName)
 		}
+		h.mu.Lock()
+		h.rebuilding = false
+		h.mu.Unlock()
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]string{

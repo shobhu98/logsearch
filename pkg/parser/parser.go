@@ -57,8 +57,7 @@ func LoadFromJSON(dataDir string) ([]models.Record, error) {
 	return records, nil
 }
 
-// toString safely converts interface{} to string
-func toString(v interface{}) string {
+func toString(v any) string {
 	if v == nil {
 		return ""
 	}

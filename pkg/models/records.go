@@ -37,5 +37,5 @@ type Record struct {
 	Event          string `json:"Event"`
 	EventId        string `json:"EventId"`
 	NanoTimeStamp  string `json:"NanoTimeStamp"`
-	Namespace      string `json:"namespace"`
+	Namespace      string `json:"Namespace"`
 }

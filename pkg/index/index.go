@@ -19,7 +19,7 @@ func New() *Index {
 		docFreq:     make(map[string]int),
 		fieldLens:   make(map[int]map[string]int),
 		avgFieldLen: make(map[string]float64),
-		cache:       newQueryCache(30 * time.Second),
+		cache:       newQueryCache(cacheTTL),
 	}
 }
 
@@ -236,7 +236,7 @@ func (idx *Index) prefixSearch(prefix string) []string {
 			break
 		}
 		terms = append(terms, t)
-		if len(terms) >= 50 { // cap prefix expansion
+		if len(terms) >= maxPrefixTerms {
 			break
 		}
 	}

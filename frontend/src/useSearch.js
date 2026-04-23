@@ -8,6 +8,7 @@ export function useSearch() {
   const [results, setResults]   = useState([])
   const [total, setTotal]       = useState(0)
   const [timeTaken, setTimeTaken] = useState(null)
+  const [roundTripMs, setRoundTripMs] = useState(null)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState(null)
   const [page, setPage]         = useState(0)
@@ -29,6 +30,7 @@ export function useSearch() {
       setResults(data.results || [])
       setTotal(data.total || 0)
       setTimeTaken(data.time_taken_ms)
+      setRoundTripMs(data.client_ms)
       setPage(pageNum)
     } catch (e) {
       if (e.name !== 'AbortError') {
@@ -48,6 +50,7 @@ export function useSearch() {
       setTotal(0)
       setSearched(false)
       setTimeTaken(null)
+      setRoundTripMs(null)
     }
   }
 
@@ -57,7 +60,7 @@ export function useSearch() {
 
   return {
     query, setQuery: handleQueryChange,
-    results, total, timeTaken,
+    results, total, timeTaken, roundTripMs,
     loading, error,
     page, totalPages, goToPage,
     searched,

@@ -25,7 +25,7 @@ func main() {
 	}
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Printf("[main] Starting Apica Search Engine on port %s", cfg.Port)
+	log.Printf("[main] Starting Search Engine on port %s", cfg.Port)
 	log.Printf("[main] Data directory: %s", cfg.DataDir)
 
 	ctx, cancel := context.WithCancel(context.Background())
