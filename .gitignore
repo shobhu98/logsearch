@@ -29,7 +29,6 @@ config.local.yaml
 Thumbs.db
 desktop.ini
 
-data/
 # Editor
 .vscode/
 .idea/
