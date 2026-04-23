@@ -79,7 +79,7 @@ flowchart TB
 
 | Tool | Version |
 |------|---------|
-| Go | 1.21+ |
+| Go | 1.25+ |
 | Node.js | 18+ |
 | Docker | 24+ |
 | GNU Make | any |
