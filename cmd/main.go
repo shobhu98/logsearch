@@ -33,11 +33,6 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		signal.Stop(sigCh)
-		cancel()
-	}()
 
 	log.Println("[main] Converting Parquet files to JSON...")
 	if err := convert.Run(); err != nil {
@@ -76,7 +71,9 @@ func main() {
 	}()
 
 	// wait for shutdown signal
-	<-ctx.Done()
+	<-sigCh
+	signal.Stop(sigCh)
+	cancel()
 
 	log.Println("[main] Shutting down gracefully...")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

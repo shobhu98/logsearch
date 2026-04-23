@@ -16,8 +16,8 @@ clean:
 
 # Docker commands
 docker.build:
-	docker build -f docker/Dockerfile.builder -t apica-builder .
-	docker build --build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) --build-arg PORT=$(PORT) -f docker/Dockerfile -t apica-backend .
+	docker build -f build/Dockerfile.builder -t apica-builder .
+	docker build --build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) --build-arg PORT=$(PORT) -f build/Dockerfile -t apica-backend .
 
 docker.run:
 	docker run -p $(PORT):$(PORT) --name apica-backend-container apica-backend
