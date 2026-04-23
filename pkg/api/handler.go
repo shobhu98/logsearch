@@ -1,6 +1,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -74,13 +75,48 @@ func (h *Handler) buildIndex() error {
 	return nil
 }
 
+// gzPool reuses gzip writers across requests to avoid per-request allocations.
+var gzPool = sync.Pool{
+	New: func() any {
+		gz, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+		return gz
+	},
+}
+
+type gzipWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (g *gzipWriter) Write(b []byte) (int, error) { return g.gz.Write(b) }
+
+// gzipMiddleware compresses responses for clients that advertise Accept-Encoding: gzip.
+func gzipMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		gz := gzPool.Get().(*gzip.Writer)
+		gz.Reset(w)
+		defer func() {
+			gz.Close()
+			gzPool.Put(gz)
+		}()
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		next.ServeHTTP(&gzipWriter{ResponseWriter: w, gz: gz}, r)
+	})
+}
+
 // RegisterRoutes sets up all HTTP routes
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/health", h.handleHealth)
-	mux.HandleFunc("/api/search", h.handleSearch)
-	mux.HandleFunc("/api/stats", h.handleStats)
-	mux.HandleFunc("/api/reload", h.handleReload)
-	mux.HandleFunc("/api/upload", h.handleUpload)
+	gz := gzipMiddleware
+	mux.Handle("/health", gz(http.HandlerFunc(h.handleHealth)))
+	mux.Handle("/api/search", gz(http.HandlerFunc(h.handleSearch)))
+	mux.Handle("/api/stats", gz(http.HandlerFunc(h.handleStats)))
+	mux.Handle("/api/reload", gz(http.HandlerFunc(h.handleReload)))
+	mux.Handle("/api/upload", gz(http.HandlerFunc(h.handleUpload)))
 }
 
 // handleHealth returns service status
@@ -141,11 +177,7 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if offset >= total {
 		results = []models.SearchResult{}
 	} else {
-		end := offset + limit
-		if end > total {
-			end = total
-		}
-		results = results[offset:end]
+		results = results[offset:min(offset+limit, total)]
 	}
 
 	writeJSON(w, http.StatusOK, models.SearchResponse{
@@ -259,7 +291,7 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 // --- helpers ---
 
-func writeJSON(w http.ResponseWriter, code int, v interface{}) {
+func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
