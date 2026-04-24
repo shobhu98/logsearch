@@ -112,7 +112,7 @@ flowchart TB
 ## Project Structure
 
 ```
- backend/                 # git repository root
+     /                 # git repository root
     ├── cmd/
     │   ├── main.go          # entry point — wires config, convert, API, server
     │   └── convert/main.go  # standalone convert CLI
