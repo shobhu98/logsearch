@@ -121,6 +121,7 @@
 .reloadBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 .reloadBtnErr { border-color: var(--red) !important; color: var(--red) !important; }
 .reloadBtnOk  { border-color: var(--accent) !important; color: var(--accent) !important; }
+.uploadErr    { font-size: 11px; color: var(--red); max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

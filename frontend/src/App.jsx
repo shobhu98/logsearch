@@ -34,12 +34,23 @@ async function pollUntilReady(onDone) {
 // ── highlight matching terms in text ──────────────────────────────────────────
 function highlight(text, query) {
   if (!query || !text) return text
-  const terms = query.trim().split(/\s+/).filter(Boolean)
+  const raw = query.trim().split(/\s+/).filter(Boolean)
+  const seen = new Set()
+  const terms = []
+  for (const t of raw) {
+    if (!seen.has(t)) { seen.add(t); terms.push(t) }
+    const parts = t.split(/[^a-zA-Z0-9]+/).filter(Boolean)
+    if (parts.length > 1) {
+      for (const p of parts) {
+        if (!seen.has(p)) { seen.add(p); terms.push(p) }
+      }
+    }
+  }
   if (!terms.length) return text
   const pattern = new RegExp(`(${terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
   const parts = text.split(pattern)
   return parts.map((part, i) =>
-    pattern.test(part)
+    i % 2 !== 0
       ? <mark key={i} className={styles.highlight}>{part}</mark>
       : part
   )
@@ -266,7 +277,7 @@ export default function App() {
               className={`${styles.reloadBtn} ${uploadState === 'error' ? styles.reloadBtnErr : ''} ${uploadState === 'done' ? styles.reloadBtnOk : ''}`}
               onClick={handleUploadClick}
               disabled={uploadState === 'uploading' || uploadState === 'processing'}
-              title={uploadMsg || 'Upload Parquet file'}
+              title="Upload Parquet file"
             >
               {uploadState === 'uploading' || uploadState === 'processing'
                 ? <span className={styles.spinner} style={{ width: 13, height: 13, borderWidth: 2 }} />
@@ -278,9 +289,12 @@ export default function App() {
             <input
               ref={fileInputRef}
               type="file"
-              style={{ display: 'none' }}
+style={{ display: 'none' }}
               onChange={handleFileChange}
             />
+            {uploadState === 'error' && uploadMsg && (
+              <span className={styles.uploadErr}>{uploadMsg}</span>
+            )}
           </div>
         </div>
       </header>

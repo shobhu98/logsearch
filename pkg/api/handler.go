@@ -64,7 +64,7 @@ func (h *Handler) buildIndex() error {
 
 	stats := idx.Stats()
 	log.Printf("[index] Stats: %d docs, %d unique terms", stats["total_docs"], stats["total_terms"])
-
+	// swap in new index before stopping old one to minimise downtime during reloads
 	h.mu.Lock()
 	oldIdx := h.idx
 	h.idx = idx
@@ -263,14 +263,14 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// sanitise filename — no path traversal, null bytes, or non-parquet uploads
+	// sanitise filename — no path traversal or null bytes
 	if strings.ContainsRune(header.Filename, 0) {
 		writeJSON(w, http.StatusBadRequest, errorResponse("invalid filename"))
 		return
 	}
 	safeName := filepath.Base(filepath.Clean(header.Filename))
-	if safeName == "." || !strings.HasSuffix(strings.ToLower(safeName), ".parquet") {
-		writeJSON(w, http.StatusBadRequest, errorResponse("only .parquet files are accepted"))
+	if safeName == "." {
+		writeJSON(w, http.StatusBadRequest, errorResponse("invalid filename"))
 		return
 	}
 	destPath := filepath.Join(h.dataDir, safeName)

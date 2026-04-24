@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+
 	"math"
 	"sort"
 	"strings"
@@ -153,6 +154,7 @@ func (idx *Index) Build(ctx context.Context, records []models.Record, numWorkers
 	}
 	sort.Strings(idx.sortedTerms)
 	idx.total = len(records)
+
 	return nil
 }
 
@@ -206,6 +208,7 @@ func (idx *Index) Search(query string) ([]models.SearchResult, float64) {
 	}
 
 	results := make([]models.SearchResult, 0, len(scores))
+
 	for docID, score := range scores {
 		if rec := idx.docs[docID]; rec != nil {
 			results = append(results, models.SearchResult{Record: rec, Score: score})
@@ -276,13 +279,29 @@ func extractFields(r *models.Record) map[string]string {
 
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
-	tokens := strings.FieldsFunc(text, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
-	result := tokens[:0]
-	for _, t := range tokens {
-		if len(t) >= 2 && !isStopword(t) {
+	// Split on whitespace only so any special-char token ("prod-web-01", "192.168.1.1", etc.) is preserved whole.
+	words := strings.Fields(text)
+	seen := make(map[string]struct{}, len(words)*2)
+	result := make([]string, 0, len(words)*2)
+	add := func(t string) {
+		if t == "" {
+			return
+		}
+		if _, ok := seen[t]; !ok {
+			seen[t] = struct{}{}
 			result = append(result, t)
+		}
+	}
+	for _, w := range words {
+		add(w) // keep full token: "prod-web-01", "10.0.0.1", "some_key:value", etc.
+		// Also emit parts split on all non-alphanumeric chars so individual pieces are searchable too.
+		parts := strings.FieldsFunc(w, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+		if len(parts) > 1 {
+			for _, p := range parts {
+				add(p)
+			}
 		}
 	}
 	return result
